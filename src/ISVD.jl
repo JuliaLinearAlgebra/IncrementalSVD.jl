@@ -1,8 +1,6 @@
-__precompile__()
-
 module ISVD
 
-import Compat
+using LinearAlgebra
 
 """
 ISVD provides incremental singular value decomposition.
@@ -51,7 +49,7 @@ containing all the data.
 """
 function update_U_s!(U, s, A::AbstractMatrix)
     if isempty(U)
-        A[isnan.(A)] = 0
+        A[isnan.(A)] .= 0
         Unew, snew, _ = svd(A)
         return oftype(U, Unew), oftype(s, snew)
     end
@@ -71,10 +69,10 @@ function update_U_s!(U, s, A::AbstractMatrix)
     # Up, sp, _ = svd(K)
     # For this application, gesvd is faster, partly because we can
     # skip computing V
-    Up, sp, _ = Base.LAPACK.gesvd!('O', 'N', copy(K))
+    Up, sp, _ = LAPACK.gesvd!('O', 'N', copy(K))
     Ucat = hcat(U, P)
-    copy!(U, Compat.view(Ucat*Up, :, 1:r))
-    copy!(s, 1, sp, 1, r)
+    copyto!(U, view(Ucat*Up, :, 1:r))
+    copyto!(s, 1, sp, 1, r)
     U, s
 end
 
@@ -103,12 +101,12 @@ end
 function qrf!(A)
     m, n = size(A)
     m >= n || throw(DimensionMismatch("Works only for m > n"))
-    A, tau = Base.LAPACK.geqrf!(A)
+    A, tau = LAPACK.geqrf!(A)
     R = zeros(eltype(A), (n,n))
     for j = 1:n, i = 1:j
         R[i,j] = A[i,j]
     end
-    Base.LAPACK.orgqr!(A, tau)
+    LAPACK.orgqr!(A, tau)
     A, R
 end
 

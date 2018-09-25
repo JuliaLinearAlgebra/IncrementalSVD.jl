@@ -1,0 +1,4 @@
+name = "ISVD"
+uuid = "0de75c66-c0d4-11e8-3de9-d1632eed9267"
+authors = ["Tim Holy <tim.holy@gmail.com>"]
+version = "0.0.0"
