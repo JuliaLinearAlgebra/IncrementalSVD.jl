@@ -9,10 +9,10 @@ jobs:
     steps:
       - name: "Add the General registry via Git"
         run: |
-          import Pkg
+          using Pkg
           ENV["JULIA_PKG_SERVER"] = ""
           Pkg.Registry.add("General")
-          Pkg.Registry.add(RegistrySpec(url = "https://github.com/HolyLab/HolyLabRegistry.git"))
+          Pkg.Registry.add(RegistrySpec(url="https://github.com/HolyLab/HolyLabRegistry.git"))
         shell: julia --color=yes {0}
       - name: "Install CompatHelper"
         run: |
