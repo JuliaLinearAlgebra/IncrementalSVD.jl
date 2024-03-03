@@ -16,8 +16,8 @@ U, s = update_U_s!(U, s, A)
 ```
 
 Update a thin SVD with a new matrix `A` of data, as if `A` had been
-appended via `hcat` to the original matrix.  Initialize with empty `U`
-and `s`; otherwise, the sizes of `U` and `A` must match.  This keeps
+appended via `hcat` to the original matrix.  Initialize with `U=nothing`,
+or empty `U` and `s`; otherwise, the sizes of `U` and `A` must match.  This keeps
 the largest `size(A,2)` singular values and left-vectors.
 
 `U` and `s` will be modified in-place except during initialization.
@@ -48,9 +48,10 @@ To compute `V` use `V = M'*U/S`, where `M` is the complete matrix
 containing all the data.
 """
 function update_U_s!(U, s, A::AbstractMatrix)
-    if isempty(U)
+    if U === nothing || isempty(U)
         A[isnan.(A)] .= 0
         Unew, snew, _ = svd(A)
+        U === nothing && return Unew, snew
         return oftype(U, Unew), oftype(s, snew)
     end
     size(U) == size(A) || throw(DimensionMismatch("Size of U ($(size(U))) and A ($(size(A))) must match"))
