@@ -2,14 +2,33 @@ module ISVD
 
 using LinearAlgebra
 
+export isvd
+
 """
 ISVD implements incremental singular value decomposition.
 
-There are no exported functions. The public functions are:
-- [`ISVD.update!`](@ref)
-- [`ISVD.impute_nans!`](@ref)
-- [`ISVD.Cache`](@ref)
+The public functions are:
+- [`isvd`](@ref)
+- [`ISVD.update!`](@ref)        (not exported)
+- [`ISVD.impute_nans!`](@ref)   (not exported)
+- [`ISVD.Cache`](@ref)          (not exported)
 """ ISVD
+
+function isvd(X::AbstractMatrix{<:Real}, nc)
+    Base.require_one_based_indexing(X)
+    T = float(eltype(X))
+    U = zeros(T, size(X,1), nc)
+    s = zeros(T, nc)
+    cache = Cache{T}(size(X,1), nc, nc)
+    for j = 1:nc:size(X,2)
+        Xchunk = @view(X[:,j:min(j+nc-1,end)])
+        U, s = update!(U, s, Xchunk, size(Xchunk, 2) == nc ? cache : nothing)
+        # if calculateVt
+        #     Vt[:,j:min(j+nc-1,end)] = Diagonal(s) \ (U' * Xchunk)
+        # end
+    end
+    U, s
+end
 
 struct Cache{T}
     A::Matrix{T}      # NaN-imputation may modify values, don't destroy the input

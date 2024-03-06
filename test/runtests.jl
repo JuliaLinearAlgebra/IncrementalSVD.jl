@@ -1,5 +1,20 @@
 using Test, LinearAlgebra
-import ISVD
+using ISVD
+
+# Test the function in the README
+function isvd_with_Vt(X::AbstractMatrix{<:Real}, nc)
+    Base.require_one_based_indexing(X)
+    T = float(eltype(X))
+    U = s = nothing
+    Vt = zeros(T, nc, size(X, 2))
+    cache = ISVD.Cache{T}(size(X,1), nc, nc)
+    for j = 1:nc:size(X,2)
+        Xchunk = @view(X[:,j:min(j+nc-1,end)])
+        U, s = ISVD.update!(U, s, Xchunk, size(Xchunk, 2) == nc ? cache : nothing)
+        Vt[:,j:min(j+nc-1,end)] = Diagonal(s) \ (U' * Xchunk)
+    end
+    return U, s, Vt
+end
 
 @testset "ISVD" begin
     r = 5
@@ -14,6 +29,19 @@ import ISVD
     # Test that A is within the span of U
     pA = U*(U'*A)
     @test pA ≈ A
+
+    # Compare with `isvd`
+    U2, s2 = isvd(M, r)
+    @test U2 ≈ U
+    @test s2 ≈ s
+
+    # Check online calculation of Vt
+    Vt = Diagonal(s) \ (U' * M)
+    U2, s2, Vt2 = isvd_with_Vt(M, r)
+    @test U2 ≈ U
+    @test s2 ≈ s
+    @test Vt2[:,end-r+1:end] ≈ Vt[:,end-r+1:end]
+    @test norm(M - U*Diagonal(s)*Vt) <= norm(M - U2*Diagonal(s2)*Vt2)
 
     # Unequal-sized blocks
     b = 3
