@@ -7,7 +7,7 @@ online SVD with streaming data.
 ## All-at-once usage
 
 For reasons that will be described below, if you want a truncated SVD and your matrix is small enough to fit in memory,
-you're better off using [TSVD](https://github.com/JuliaLinearAlgebra/TSVD.jl). However, ISVD
+you're better off using [TSVD](https://github.com/JuliaLinearAlgebra/TSVD.jl). However, ISVD can do it too:
 
 ```julia
 julia> using ISVD, LinearAlgebra
@@ -45,7 +45,7 @@ However, the real use-case for ISVD is in computing incremental updates or handl
 
 ## Incremental updates
 
-Here's a demo in which we process `A` in chunks of 4 columns:
+Here's a demo in which we process `X` in chunks of 4 columns:
 
 ```julia
 julia> using ISVD, LinearAlgebra
