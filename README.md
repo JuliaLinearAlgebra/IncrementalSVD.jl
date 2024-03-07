@@ -35,8 +35,8 @@ julia> norm(X - U*Diagonal(s)*Vt)
 julia> norm(X - U2*Diagonal(s2)*V2')
 1.9177860422120783
 ```
-In this particular case, the TSVD is a few percent better than the ISVD.
-The error of incremental SVD comes from the fact that it works on chunks, and there is a truncation step after each chunk that discards information; see Brand 2006 (full citation at the bottom of the page), Eq 5 for more insight.
+In this particular case, the rank-4 error with TSVD is a few percent better than with ISVD.
+The error of incremental SVD comes from the fact that it works on chunks, and there is a truncation step after each chunk that discards information; see [Brand 2006](#references) Eq 5 for more insight.
 
 However, the *real* use-case for ISVD is in computing incremental updates or handling cases where `X` is too large to fit in memory all at once, and for such applications it handily beats alternatives like random projection + power iteration (e.g., `rsvd` from [RandomizedLinAlg.jl](https://github.com/JuliaLinearAlgebra/RandomizedLinAlg.jl)).
 
