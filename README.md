@@ -78,6 +78,19 @@ julia> F.S
 
 `isvd` is just a thin wrapper over this basic iterative update.
 
+## Reducing error
+
+The most straightforward way to reduce error is to retain more components than you actually need.
+We can estimate this error by generating covariance matrices where eigenvalue $\lambda_{k+1} = \beta \lambda_k$ for a constant $0 \le \beta \le 1$.
+Using this covariance matrix, we generate 1000 samples in a 100-dimensional space, and compare the accuracy of `isvd` vs `svd` for 5 retained components.
+Without any extra components, the error for $\beta=1$ is approximately 1.8% and drops below 0.1% for $\beta \approx 0.78$.
+Conversely, if we compute `isvd` with twice as many components as we expect to keep, the error for $\beta=1$ is 1.2% and drops below 0.1% for $\beta \approx 0.93$.
+The relative error as a function of both $\beta$ and the number of "extra" components retained can be shown as a heatmap:
+
+![Error with extra components](test/accuracy/relerror.png)
+
+Full details can be found in the [analysis script](test/accuracy/accuracy.jl).
+
 ## Advanced usage
 
 You can reduce the amount of memory allocated with each update by supplying a cache for intermediate results.
