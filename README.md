@@ -88,7 +88,7 @@ The relative error as a function of both $\beta$ and the number of "extra" compo
 ![Error with extra components](test/accuracy/relerror.png)
 
 (A fraction 2.0 of extra components means that if we're keeping 5 components, we compute with 2.0*5=10 *extra* components, meaning `isvd` is called with 15 components. Only the top 5 are retained for the error calculation.)
-In the figure above, `isvd` is shown on the left, and `rsvd` on the right.
+In the figure above, `isvd` is shown on the left and `rsvd` on the right; `isvd` wins by a very large margin.
 
 Full details can be found in the [analysis script](test/accuracy/accuracy.jl).
 
