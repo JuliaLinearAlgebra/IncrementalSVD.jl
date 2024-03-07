@@ -31,10 +31,13 @@ struct Cache{T}
     A::Matrix{T}      # NaN-imputation may modify values, don't destroy the input
     UtA::Matrix{T}    # U'*A
     Uperp::Matrix{T}  # A - U*UtA, the part of A orthogonal to U; will also hold P once that gets computed
+    UtP::Matrix{T}    # U'*P
+    Pperp::Matrix{T}  # P - U*UtP, project out U from P (needed for roundoff error)
     R::Matrix{T}      # The upper triangular matrix from the QR decomposition of Uperp
     K::Matrix{T}      # Eq. 4, Brand 2006
     UP::Matrix{T}     # [U P]
     UProt::Matrix{T}  # UP*U′, the rotated part of [U P] (the first r columns will be the new U)
+    Us::Matrix{T}     # U*Diagonal(s)
 end
 
 """
@@ -53,10 +56,13 @@ Cache{T}(m::Int, r::Int, b::Int) where T = Cache{T}(
     zeros(T, m, b),     # A
     zeros(T, r, b),     # UtA
     zeros(T, m, b),     # Uperp
+    zeros(T, r, b),     # UtP
+    zeros(T, m, b),     # Pperp
     zeros(T, b, b),     # R
     zeros(T, r+b, r+b), # K
     zeros(T, m, r+b),   # UP
     zeros(T, m, r+b),   # UProt
+    zeros(T, m, r),     # Us
 )
 function Cache(U::AbstractMatrix, A::AbstractMatrix)
     Base.require_one_based_indexing(U, A)
@@ -129,14 +135,23 @@ function update!(U::AbstractMatrix, s::AbstractVector, A::AbstractMatrix, cache:
     mA, b = size(A)
     m == mA || throw(DimensionMismatch("number of rows in U and A must match, got $m and $mA"))
     copyto!(cache.A, A)
-    impute_nans!(cache.A, U, s)
-    (; UtA, Uperp, R, K, UP, UProt) = cache
+    mul!(cache.Us, U, Diagonal(s))  # U*S is needed for NaN-imputation
+    impute_nans!(cache.A, cache.Us)
+    (; UtA, Uperp, UtP, Pperp, R, K, UP, UProt) = cache
     mul!(UtA, U', cache.A)          # projection onto space spanned by U
     mul!(Uperp, U, UtA)             # projection back into U-space
     negsub!(Uperp, cache.A)         # the part of A orthogonal to U
     P, R = qrf!(Uperp, R)
+    # Nominally, P is already orthogonal to U. But if the number of retained components exceeds
+    # the actual rank of the matrix, this may not be true (it orthogonalizes noise).
+    # So we'll project out the part of P that's in the span of U.
+    mul!(UtP, U', P)
+    mul!(Pperp, U, UtP)
+    negsub!(Pperp, P)
     copyto!(view(UP, :, 1:r), U)    # UP = [U P]
-    copyto!(view(UP, :, r+1:r+b), P)
+    copyto!(view(UP, :, r+1:r+b), Pperp)
+    # Because we treat `A` as new columns of data, in Brand 2006 we have B'[:,currentcolumns] = I;
+    # since V' is zero over this span of columns, V'*B = 0, and thus Q = R_B = I.
     fill!(K, zero(eltype(K)))       # Eq. 4, Brand 2006
     for j = 1:r
         K[j,j] = s[j]
@@ -168,17 +183,18 @@ end
 Impute missing values in `A` using the SVD `U` and `s`.
 `A` is modified in place and returned.
 """
-function impute_nans!(A, U, s)
+function impute_nans!(A, Us)
     # Impute missing values
     for j in axes(A, 2)
         c = view(A, :, j)
         nanflag = isnan.(c)
         sum(nanflag) == 0 && continue
         notnanflag = map(!, nanflag)
-        c[nanflag] = U[nanflag,:]*Diagonal(s)*(U[notnanflag,:]*Diagonal(s)\c[notnanflag])
+        c[nanflag] = Us[nanflag,:] * (Us[notnanflag,:] \ c[notnanflag])
     end
     return A
 end
+impute_nans!(A, U, s) = impute_nans!(A, U*Diagonal(s))
 
 function negsub!(dest, src)
     @inbounds @simd for I in eachindex(dest, src)
@@ -192,6 +208,7 @@ function qrf!(P, R)
     m, b = size(P)
     m >= b || throw(DimensionMismatch("Works only for m > b"))
     P, tau = LAPACK.geqrf!(P)
+    fill!(R, zero(eltype(R)))
     for j = 1:b, i = 1:j
         R[i,j] = P[i,j]
     end
