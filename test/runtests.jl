@@ -44,7 +44,7 @@ end
     @test norm(M - U*Diagonal(s)*Vt) <= norm(M - U2*Diagonal(s2)*Vt2)
 
     # Unequal-sized blocks
-    b = 3
+    b = 4
     Ub, sb = zero(U), zero(s)
     for j = 1:b:size(M,2)
         Ub, sb = ISVD.update!(Ub, sb, M[:,j:min(j+b-1, end)])
@@ -53,6 +53,12 @@ end
         @test col1 ≈ col2 || col1 ≈ -col2
     end
     @test sb ≈ s
+    # Also check that `isvd` works with mismatched block sizes
+    Ub2, sb2 = isvd(M, r+2)
+    for (col1, col2) in zip(eachcol(Ub), eachcol(Ub2[:,1:r]))
+        @test col1 ≈ col2 || col1 ≈ -col2
+    end
+    @test sb2[1:r] ≈ s
 
     # Test that two passes through `M` is like `svd([M M])`
     for j = 1:r:size(M,2)
