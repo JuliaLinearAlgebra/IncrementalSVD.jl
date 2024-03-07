@@ -19,11 +19,7 @@ julia> U, s = isvd(X, 4);    # get a rank-4 truncated SVD
 julia> Vt = Diagonal(s) \ (U' * X);
 ```
 
-Note that `Vt` is *not* returned by `isvd`, instead we compute it afterwards.
-This is because `X` is processed in chunks, and both `U` and `s` get updated
-with each chunk; if we computed `V` "on-the-fly", the early rows of `V` would be computed from an early
-approximation of `U` and `s`, and thus inconsistent with later rows.
-If despite this warning you still wish to calculate `Vt` on-the-fly, see the section on "on-the-fly V" below.
+Note that `Vt` is *not* returned by `isvd`; for reasons described [below](#on-the-fly-v) we compute it afterwards.
 
 `isvd` uses incremental updating, which is lossy to an extent that depends on the distribution of singular values.
 For comparison:
@@ -39,9 +35,10 @@ julia> norm(X - U*Diagonal(s)*Vt)
 julia> norm(X - U2*Diagonal(s2)*V2')
 1.9177860422120783
 ```
-In this particular case, the TSVD is a few percent better than the ISVD.
+In this particular case, the rank-4 error with TSVD is a few percent better than with ISVD.
+The error of incremental SVD comes from the fact that it works on chunks, and there is a truncation step after each chunk that discards information; see [Brand 2006](#references) Eq 5 for more insight.
 
-However, the real use-case for ISVD is in computing incremental updates or handling cases where `X` is too large to fit in memory all at once.
+However, the *real* use-case for ISVD is in computing incremental updates or handling cases where `X` is too large to fit in memory all at once, and for such applications it handily beats alternatives like random projection + power iteration (e.g., `rsvd` from [RandomizedLinAlg.jl](https://github.com/JuliaLinearAlgebra/RandomizedLinAlg.jl)).
 
 ## Incremental updates
 
@@ -78,6 +75,23 @@ julia> F.S
 
 `isvd` is just a thin wrapper over this basic iterative update.
 
+## Reducing error
+
+The most straightforward way to reduce error is to retain more components than you actually need.
+We can estimate this error by generating covariance matrices where eigenvalue $\lambda_{k+1} = \beta \lambda_k$ for a constant $0 \le \beta \le 1$.
+Using this covariance matrix, we generate 1000 samples in a 100-dimensional space, and compare the accuracy of `isvd` vs `svd` for 5 retained components.
+Without any extra components, the error for $\beta=1$ is approximately 1.8% and drops below 0.1% for $\beta \approx 0.78$.
+Conversely, if we compute `isvd` with twice as many components as we expect to keep, the error for $\beta=1$ is 1.2% and drops below 0.1% for $\beta \approx 0.93$.
+(For comparison, `rsvd` from [RandomizedLinAlg.jl](https://github.com/JuliaLinearAlgebra/RandomizedLinAlg.jl) with no extra components has an error of 11% at $\beta=1$ and stayed above 5% for all tested $\beta$; with twice as many components the error was 4.4% at $\beta=1$ and did not drop below 0.1% until $\beta = 0.35$.)
+The relative error as a function of both $\beta$ and the number of "extra" components retained can be shown as a heatmap:
+
+![Error with extra components](test/accuracy/relerror.png)
+
+(A fraction 2.0 of extra components means that if we're keeping 5 components, we compute with 2.0*5=10 *extra* components, meaning `isvd` is called with 15 components. Only the top 5 are retained for the error calculation.)
+In the figure above, `isvd` is shown on the left and `rsvd` on the right; `isvd` wins by a very large margin.
+
+Full details can be found in the [analysis script](test/accuracy/accuracy.jl).
+
 ## Advanced usage
 
 You can reduce the amount of memory allocated with each update by supplying a cache for intermediate results.
@@ -87,7 +101,10 @@ ISVD performs NaN-imputation. While in normal usage it doesn't modify values of 
 
 ## On-the-fly V
 
-Again, the first section of this page warns against computing `V` on the fly.
+Why doesn't `isvd` return `V`? This is because `X` is processed in chunks, and both `U` and `s` get updated
+with each chunk; if we computed `V` "on-the-fly", the early rows of `V` would be computed from an early
+approximation of `U` and `s`, and thus inconsistent with later rows. *The error that comes from not using a fully "trained" `U` and `s` can be very large*.
+
 In online applications, a good strategy might be to "train" `U` and `s` with enough samples, and then start
 computing `V` once trained (no longer updating `U` and `s`).
 

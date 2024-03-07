@@ -1,0 +1,8 @@
+[deps]
+CairoMakie = "13f3f980-e62b-5c42-98c6-ff1f3baf88f0"
+GLMakie = "e9467ef8-e4e7-5192-8a1a-b1aee30e663a"
+ISVD = "0de75c66-c0d4-11e8-3de9-d1632eed9267"
+LinearAlgebra = "37e2e46d-f89d-539d-b4ee-838fcccc9c8e"
+Makie = "ee78f7c6-11fb-53f2-987a-cfe4a2b5a57a"
+OffsetArrays = "6fe1bfb0-de20-5000-8ca7-80f57d26f881"
+RandomizedLinAlg = "0448d7d9-159c-5637-8537-fd72090fea46"
