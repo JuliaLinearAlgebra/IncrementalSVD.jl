@@ -19,11 +19,7 @@ julia> U, s = isvd(X, 4);    # get a rank-4 truncated SVD
 julia> Vt = Diagonal(s) \ (U' * X);
 ```
 
-Note that `Vt` is *not* returned by `isvd`, instead we compute it afterwards.
-This is because `X` is processed in chunks, and both `U` and `s` get updated
-with each chunk; if we computed `V` "on-the-fly", the early rows of `V` would be computed from an early
-approximation of `U` and `s`, and thus inconsistent with later rows.
-If despite this warning you still wish to calculate `Vt` on-the-fly, see the section on "on-the-fly V" below.
+Note that `Vt` is *not* returned by `isvd`; for reasons described [below](#on-the-fly-v) we compute it afterwards.
 
 `isvd` uses incremental updating, which is lossy to an extent that depends on the distribution of singular values.
 For comparison:
@@ -105,7 +101,10 @@ ISVD performs NaN-imputation. While in normal usage it doesn't modify values of 
 
 ## On-the-fly V
 
-Again, the first section of this page warns against computing `V` on the fly.
+Why doesn't `isvd` return `V`? This is because `X` is processed in chunks, and both `U` and `s` get updated
+with each chunk; if we computed `V` "on-the-fly", the early rows of `V` would be computed from an early
+approximation of `U` and `s`, and thus inconsistent with later rows. *The error that comes from not using a fully "trained" `U` and `s` can be very large*.
+
 In online applications, a good strategy might be to "train" `U` and `s` with enough samples, and then start
 computing `V` once trained (no longer updating `U` and `s`).
 
