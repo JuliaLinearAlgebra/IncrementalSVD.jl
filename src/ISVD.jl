@@ -23,9 +23,6 @@ function isvd(X::AbstractMatrix{<:Real}, nc)
     for j = 1:nc:size(X,2)
         Xchunk = @view(X[:,j:min(j+nc-1,end)])
         U, s = update!(U, s, Xchunk, size(Xchunk, 2) == nc ? cache : nothing)
-        # if calculateVt
-        #     Vt[:,j:min(j+nc-1,end)] = Diagonal(s) \ (U' * Xchunk)
-        # end
     end
     U, s
 end
