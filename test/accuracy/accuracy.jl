@@ -45,7 +45,7 @@ fracextra = reverse(convert(Vector, OffsetArrays.no_offset_view(rextras / r)))
 ploterr = reverse(OffsetArrays.no_offset_view(errmtrx); dims=1)
 
 fig = Figure()
-ax = Axis(fig[1, 1]; ylabel="β", xlabel="fraction extra", title="Relative error of ISVD")
+ax = Axis(fig[1, 1]; ylabel="β", xlabel="fraction extra components", title="Relative error of isvd")
 hm = heatmap!(ax, fracextra, βs, ploterr, colorscale=log10)
 Colorbar(fig[1,2], hm, label="relative error")
 fig
