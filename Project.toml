@@ -1,5 +1,5 @@
 name = "IncrementalSVD"
-uuid = "0de75c66-c0d4-11e8-3de9-d1632eed9267"
+uuid = "de227602-7e15-40a7-b166-bbaff82a52b8"
 authors = ["Tim Holy <tim.holy@gmail.com>"]
 version = "1.0.0"
 
