@@ -1,5 +1,5 @@
 using Test, LinearAlgebra
-using ISVD
+using IncrementalSVD: IncrementalSVD as ISVD, isvd
 
 # Test the function in the README
 function isvd_with_Vt(X::AbstractMatrix{<:Real}, nc)

@@ -1,16 +1,16 @@
-# ISVD
+# IncrementalSVD
 
-ISVD provides incremental (updating) singular value decomposition.
+IncrementalSVD provides incremental (updating) singular value decomposition.
 This allows you to update an existing SVD with new columns, and even implement
 online SVD with streaming data.
 
 ## All-at-once usage
 
 For reasons that will be described below, if you want a truncated SVD and your matrix is small enough to fit in memory,
-you're better off using [TSVD](https://github.com/JuliaLinearAlgebra/TSVD.jl). However, ISVD can do it too:
+you're better off using [TSVD](https://github.com/JuliaLinearAlgebra/TSVD.jl). However, IncrementalSVD can do it too:
 
 ```julia
-julia> using ISVD, LinearAlgebra
+julia> using IncrementalSVD, LinearAlgebra
 
 julia> X = randn(5, 12);
 
@@ -35,17 +35,19 @@ julia> norm(X - U*Diagonal(s)*Vt)
 julia> norm(X - U2*Diagonal(s2)*V2')
 1.9177860422120783
 ```
-In this particular case, the rank-4 error with TSVD is a few percent better than with ISVD.
+In this particular case, the rank-4 absolute error with TSVD is a few percent better than with IncrementalSVD.
 The error of incremental SVD comes from the fact that it works on chunks, and there is a truncation step after each chunk that discards information; see [Brand 2006](#references) Eq 5 for more insight.
 
-However, the *real* use-case for ISVD is in computing incremental updates or handling cases where `X` is too large to fit in memory all at once, and for such applications it handily beats alternatives like random projection + power iteration (e.g., `rsvd` from [RandomizedLinAlg.jl](https://github.com/JuliaLinearAlgebra/RandomizedLinAlg.jl)).
+However, the *real* use-case for IncrementalSVD is in computing incremental updates or handling cases where `X` is too large to fit in memory all at once, and for such applications it handily beats alternatives like random projection + power iteration (e.g., `rsvd` from [RandomizedLinAlg.jl](https://github.com/JuliaLinearAlgebra/RandomizedLinAlg.jl)).
 
 ## Incremental updates
 
 Here's a demo in which we process `X` in chunks of 4 columns:
 
 ```julia
-julia> using ISVD, LinearAlgebra
+julia> using LinearAlgebra
+
+julia> using IncrementalSVD: IncrementalSVD as ISVD, isvd    # use a shorthand name for the package
 
 julia> X = randn(5, 12);
 
@@ -78,10 +80,10 @@ julia> F.S
 ## Reducing error
 
 The most straightforward way to reduce error is to retain more components than you actually need.
-We can estimate this error by generating covariance matrices where eigenvalue $\lambda_{k+1} = \beta \lambda_k$ for a constant $0 \le \beta \le 1$.
+To estimate this error and how it depends on the number of extra components and the characteristics of the input matrix, in this demo we'll use covariance matrices where eigenvalue $\lambda_{k+1} = \beta \lambda_k$ for a constant $0 \le \beta \le 1$.
 Using this covariance matrix, we generate 1000 samples in a 100-dimensional space, and compare the accuracy of `isvd` vs `svd` for 5 retained components.
 Without any extra components, the error for $\beta=1$ is approximately 1.8% and drops below 0.1% for $\beta \approx 0.78$.
-Conversely, if we compute `isvd` with twice as many components as we expect to keep, the error for $\beta=1$ is 1.2% and drops below 0.1% for $\beta \approx 0.93$.
+If we instead compute `isvd` with twice as many components (10) as we expect to keep (5), the error for $\beta=1$ is 1.2% and drops below 0.1% for $\beta \approx 0.93$.
 (For comparison, `rsvd` from [RandomizedLinAlg.jl](https://github.com/JuliaLinearAlgebra/RandomizedLinAlg.jl) with no extra components has an error of 11% at $\beta=1$ and stayed above 5% for all tested $\beta$; with twice as many components the error was 4.4% at $\beta=1$ and did not drop below 0.1% until $\beta = 0.35$.)
 The relative error as a function of both $\beta$ and the number of "extra" components retained can be shown as a heatmap:
 
@@ -95,9 +97,9 @@ Full details can be found in the [analysis script](test/accuracy/accuracy.jl).
 ## Advanced usage
 
 You can reduce the amount of memory allocated with each update by supplying a cache for intermediate results.
-See `?ISVD.Cache`.
+See `?IncrementalSVD.Cache`.
 
-ISVD performs NaN-imputation. While in normal usage it doesn't modify values of `X` in-place, see `?ISVD.impute_nans`.
+IncrementalSVD performs NaN-imputation. While in normal usage it doesn't modify values of `X` in-place, see `?IncrementalSVD.impute_nans`.
 
 ## On-the-fly V
 
@@ -116,18 +118,17 @@ function isvd_with_Vt(X::AbstractMatrix{<:Real}, nc)
     T = float(eltype(X))
     U = s = nothing
     Vt = zeros(T, nc, size(X, 2))
-    cache = ISVD.Cache{T}(size(X,1), nc, nc)
+    cache = IncrementalSVD.Cache{T}(size(X,1), nc, nc)
     for j = 1:nc:size(X,2)
         Xchunk = @view(X[:,j:min(j+nc-1,end)])
-        U, s = ISVD.update!(U, s, Xchunk, size(Xchunk, 2) == nc ? cache : nothing)
+        U, s = IncrementalSVD.update!(U, s, Xchunk, size(Xchunk, 2) == nc ? cache : nothing)
         Vt[:,j:min(j+nc-1,end)] = Diagonal(s) \ (U' * Xchunk)
     end
     return U, s, Vt
 end
 ```
 
-This is just a minor extension of the source-code for `isvd`.
-
+This is just a minor extension of the source-code for `isvd`. Again, this is **not recommended**.
 
 
 ## References
