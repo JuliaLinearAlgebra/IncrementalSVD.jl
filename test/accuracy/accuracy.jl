@@ -1,5 +1,5 @@
 using Makie   # pick GLMakie or CairoMakie externally
-using ISVD
+using IncrementalSVD
 using LinearAlgebra
 using RandomizedLinAlg
 using OffsetArrays

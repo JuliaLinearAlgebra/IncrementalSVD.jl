@@ -1,18 +1,18 @@
-module ISVD
+module IncrementalSVD
 
 using LinearAlgebra
 
 export isvd
 
 """
-ISVD implements incremental singular value decomposition.
+IncrementalSVD implements incremental singular value decomposition.
 
 The public functions are:
 - [`isvd`](@ref)
-- [`ISVD.update!`](@ref)        (not exported)
-- [`ISVD.impute_nans!`](@ref)   (not exported)
-- [`ISVD.Cache`](@ref)          (not exported)
-""" ISVD
+- [`IncrementalSVD.update!`](@ref)        (not exported)
+- [`IncrementalSVD.impute_nans!`](@ref)   (not exported)
+- [`IncrementalSVD.Cache`](@ref)          (not exported)
+""" IncrementalSVD
 
 function isvd(X::AbstractMatrix{<:Real}, nc)
     Base.require_one_based_indexing(X)
@@ -46,7 +46,7 @@ end
 
 A cache for the incremental SVD algorithm.  This is a struct for storing
 intermediate results of the incremental SVD algorithm.  It can be used to
-reduce memory allocation during [`ISVD.update!`](@ref).
+reduce memory allocation during [`IncrementalSVD.update!`](@ref).
 
 `m` is the number of rows in the matrix we're computing the SVD of, `r` is
 the rank of the SVD we're computing, and `b` is the blocksize. Concretely,
@@ -72,12 +72,12 @@ function Cache(U::AbstractMatrix, A::AbstractMatrix)
 end
 
 """
-    U, s = ISVD.update!(U, s, A, cache=Cache(U, A))
+    U, s = IncrementalSVD.update!(U, s, A, cache=Cache(U, A))
 
 Update a thin SVD with a new matrix `A` of data, as if `A` had been appended via `hcat`
 to the original matrix. `A` can be thought of as a "chunk" in an incremental
 computation of the SVD. `U` and `s` are updated in-place as well as returned.
-You can reuse temporary storage by creating `cache` (see [`ISVD.Cache`](@ref)).
+You can reuse temporary storage by creating `cache` (see [`IncrementalSVD.Cache`](@ref)).
 
 There are two ways to initialize:
 - `U, s, V = zeros(T, m, r), zeros(T, r), zeros(T, n, r)`. This specifies
@@ -87,7 +87,7 @@ There are two ways to initialize:
   the chunk size specifies the truncated rank.
 
 If `A` has NaNs, replacement values will be imputed, but `A` itself will not
-be modified. See [`ISVD.impute_nans!`](@ref) if you'd like to run the imputation
+be modified. See [`IncrementalSVD.impute_nans!`](@ref) if you'd like to run the imputation
 separately.
 
 If you are computing only `U` and `s`, you can obtain `V` from
