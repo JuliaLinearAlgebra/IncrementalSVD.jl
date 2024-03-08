@@ -51,7 +51,7 @@ julia> using IncrementalSVD: IncrementalSVD as ISVD, isvd    # use a shorthand n
 
 julia> X = randn(5, 12);
 
-julia> U, s = ISVD.update!(nothing, nothing, X[:,1:4]);   # use `nothing` to initialize
+julia> U, s = ISVD.update!(nothing, nothing, X[:,1:4]);   # use `nothing` or `zeros(T, m, r), zeros(T, r)` to initialize
 
 julia> ISVD.update!(U, s, X[:, 5:8]);
 
