@@ -3,11 +3,13 @@
 IncrementalSVD provides incremental (updating) singular value decomposition.
 This allows you to update an existing SVD with new columns, and even implement
 online SVD with streaming data.
+For cheap approximations of the SVD on large data, it can be orders-of-magnitude
+more accurate than techniques involving random projection.
 
 ## All-at-once usage
 
-For reasons that will be described below, if you want a truncated SVD and your matrix is small enough to fit in memory,
-you're better off using [TSVD](https://github.com/JuliaLinearAlgebra/TSVD.jl). However, IncrementalSVD can do it too:
+If you want a truncated SVD and your matrix is small enough to fit in memory,
+you can use IncrementalSVD like this:
 
 ```julia
 julia> using IncrementalSVD, LinearAlgebra
@@ -21,8 +23,11 @@ julia> Vt = Diagonal(s) \ (U' * X);
 
 Note that `Vt` is *not* returned by `isvd`; for reasons described [below](#on-the-fly-v) we compute it afterwards.
 
-`isvd` uses incremental updating, which is lossy to an extent that depends on the distribution of singular values.
-For comparison:
+In typical cases, `isvd` returns a (good) *approximation* of the true SVD.
+This is in contrast with packages like
+[TSVD](https://github.com/JuliaLinearAlgebra/TSVD.jl) which return an exact
+(within numerical precision) answer.
+Let's compare the error of the rank-4 approximation computed by `isvd` with that computed by TSVD:
 
 ```julia
 julia> using TSVD
@@ -36,9 +41,10 @@ julia> norm(X - U2*Diagonal(s2)*V2')
 1.9177860422120783
 ```
 In this particular case, the rank-4 absolute error with TSVD is a few percent better than with IncrementalSVD.
-The error of incremental SVD comes from the fact that it works on chunks, and there is a truncation step after each chunk that discards information; see [Brand 2006](#references) Eq 5 for more insight.
+The error of incremental SVD comes from the fact that it works on chunks, and after each chunk any excess components are truncated, resulting in a loss of information.
+See [Brand 2006](#references) Eq 5 for more insight.
 
-However, the *real* use-case for IncrementalSVD is in computing incremental updates or handling cases where `X` is too large to fit in memory all at once, and for such applications it handily beats alternatives like random projection + power iteration (e.g., `rsvd` from [RandomizedLinAlg.jl](https://github.com/JuliaLinearAlgebra/RandomizedLinAlg.jl)).
+However, the *real* use-case for IncrementalSVD is in computing incremental updates or handling cases where `X` is too large to fit in memory all at once, and for such applications it handily beats alternatives like random projection + power iteration (e.g., `rsvd` from [RandomizedLinAlg.jl](https://github.com/JuliaLinearAlgebra/RandomizedLinAlg.jl)). See details below.
 
 ## Incremental updates
 
@@ -63,7 +69,11 @@ julia> s
  4.18050301615471
  3.662876466035874
  2.923979120208828
+```
 
+For comparison, the true answer is:
+
+```julia
 julia> F = svd(X);
 
 julia> F.S
@@ -74,6 +84,8 @@ julia> F.S
  2.9398639871271564
  1.7956053622541457
 ```
+
+The singular values computed by `update!` were accurate to 3-5 digits.
 
 `isvd` is just a thin wrapper over this basic iterative update.
 
