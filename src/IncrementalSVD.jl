@@ -14,6 +14,19 @@ The public functions are:
 - [`IncrementalSVD.Cache`](@ref)          (not exported)
 """ IncrementalSVD
 
+"""
+    U, s = isvd(X::AbstractMatrix{<:Real}, nc)
+
+Compute an incremental thin SVD of the matrix `X`, returning the left singular
+vectors `U` and the singular values `s`.  The number of retained components
+is specified by `nc`.
+
+`V` may be obtained via `V = (X' * U) / Diagonal(s)`.
+
+`isvd` is just a wrapper around repeated calls to [`IncrementalSVD.update!`](@ref).
+In cases with streaming or large `X` that cannot fit into memory, you may prefer
+to use `IncrementalSVD.update!` directly with smaller chunks of `X`.
+"""
 function isvd(X::AbstractMatrix{<:Real}, nc)
     Base.require_one_based_indexing(X)
     T = float(eltype(X))
@@ -80,9 +93,8 @@ computation of the SVD. `U` and `s` are updated in-place as well as returned.
 You can reuse temporary storage by creating `cache` (see [`IncrementalSVD.Cache`](@ref)).
 
 There are two ways to initialize:
-- `U, s, V = zeros(T, m, r), zeros(T, r), zeros(T, n, r)`. This specifies
-  the element type `T`, the number of rows `m`, the rank `r`, and the number
-  of columns `n`. If you're computing `V`, this is the only option.
+- `U, s = zeros(T, m, r), zeros(T, r)`. This specifies the element type `T`, the
+  number of rows `m` and the rank `r`.
 - `U, s = nothing, nothing`. This will use `size(U) = size(A)`, i.e.,
   the chunk size specifies the truncated rank.
 
