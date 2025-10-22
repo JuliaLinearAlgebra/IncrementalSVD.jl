@@ -1,5 +1,8 @@
 # IncrementalSVD
 
+[![CI](https://github.com/JuliaLinearAlgebra/IncrementalSVD.jl/actions/workflows/CI.yml/badge.svg)](https://github.com/JuliaLinearAlgebra/IncrementalSVD.jl/actions/workflows/CI.yml)
+[![codecov](https://codecov.io/github/JuliaLinearAlgebra/IncrementalSVD.jl/graph/badge.svg?token=0bFD3ApcPq)](https://codecov.io/github/JuliaLinearAlgebra/IncrementalSVD.jl)
+
 IncrementalSVD provides incremental (updating) singular value decomposition.
 This allows you to update an existing SVD with new columns, and even implement
 online SVD with streaming data.
