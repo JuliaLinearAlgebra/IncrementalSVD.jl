@@ -3,6 +3,9 @@ module IncrementalSVD
 using LinearAlgebra
 
 export isvd
+@static if VERSION >= v"1.11"
+    eval(Meta.parse("public Cache, update!, impute_nans!"))
+end
 
 """
 IncrementalSVD implements incremental singular value decomposition.
