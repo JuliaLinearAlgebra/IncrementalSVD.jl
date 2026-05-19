@@ -18,8 +18,14 @@ end
 
 @testset "ISVD" begin
     r = 5
-    A = rand(20, r)
-    B = rand(r, 30)
+    # Build a rank-`r` target `M = A*B` with well-separated singular values
+    # (5, 4, 3, 2, 1). With a poorly-conditioned target the trailing singular
+    # vector is only weakly determined, and independent incremental SVD
+    # computations can disagree on it by more than the default tolerance.
+    QA = Matrix(qr(randn(20, r)).Q)[:, 1:r]
+    QB = Matrix(qr(randn(30, r)).Q)[:, 1:r]
+    A = QA * Diagonal(Float64.(r:-1:1))
+    B = QB'
     M = A*B
     U = s = nothing
     for j = 1:r:size(M,2)
@@ -30,17 +36,23 @@ end
     pA = U*(U'*A)
     @test pA ≈ A
 
-    # Compare with `isvd`
+    # Compare with `isvd`. Singular vectors are determined only up to sign, so
+    # compare columnwise allowing a flip.
     U2, s2 = isvd(M, r)
-    @test U2 ≈ U
+    for (col1, col2) in zip(eachcol(U), eachcol(U2))
+        @test col1 ≈ col2 || col1 ≈ -col2
+    end
     @test s2 ≈ s
 
     # Check online calculation of Vt
     Vt = Diagonal(s) \ (U' * M)
     U2, s2, Vt2 = isvd_with_Vt(M, r)
-    @test U2 ≈ U
+    for (col1, col2) in zip(eachcol(U), eachcol(U2))
+        @test col1 ≈ col2 || col1 ≈ -col2
+    end
     @test s2 ≈ s
-    @test Vt2[:,end-r+1:end] ≈ Vt[:,end-r+1:end]
+    # A sign flip in a column of `U` flips the corresponding row of `Vt`.
+    @test abs.(Vt2[:,end-r+1:end]) ≈ abs.(Vt[:,end-r+1:end])
     @test norm(M - U*Diagonal(s)*Vt) <= norm(M - U2*Diagonal(s2)*Vt2)
 
     # Unequal-sized blocks
