@@ -119,3 +119,23 @@ end
     @test s ≈ s1[1:r]
     @test abs.(U1[:,1:r]'*U) ≈ I
 end
+
+@testset "allocation-free update!" begin
+    # `update!` with a reused `Cache` should not allocate a problem-sized
+    # buffer per call: the LAPACK workspace is cached (issue #29). A small
+    # constant (a `Ref` inside FastLapackInterface's `gesvd!`) is tolerated.
+    r, m, n = 6, 100, 60
+    QU = Matrix(qr(randn(m, r)).Q)[:, 1:r]
+    QV = Matrix(qr(randn(n, r)).Q)[:, 1:r]
+    M = QU * Diagonal(Float64.(r:-1:1)) * QV'
+    for T in (Float64, Float32)
+        MT = T.(M)
+        U = zeros(T, m, r)
+        s = zeros(T, r)
+        cache = ISVD.Cache{T}(m, r, r)
+        chunk = Matrix(MT[:, 1:r])
+        ISVD.update!(U, s, chunk, cache)   # compile
+        ISVD.update!(U, s, chunk, cache)   # warm
+        @test (@allocated ISVD.update!(U, s, chunk, cache)) <= 64
+    end
+end
