@@ -1,15 +1,17 @@
 name = "IncrementalSVD"
 uuid = "de227602-7e15-40a7-b166-bbaff82a52b8"
 authors = ["Tim Holy <tim.holy@gmail.com>"]
-version = "1.0.2"
+version = "1.1.0"
 
 [deps]
+FastLapackInterface = "29a986be-02c6-4525-aec4-84b980013641"
 LinearAlgebra = "37e2e46d-f89d-539d-b4ee-838fcccc9c8e"
 
 [compat]
+FastLapackInterface = "2"
 LinearAlgebra = "1"
 Test = "1"
-julia = "1.7"
+julia = "1.10"
 
 [extras]
 Test = "8dfed614-e22c-5e08-85e1-65c5234f0b40"

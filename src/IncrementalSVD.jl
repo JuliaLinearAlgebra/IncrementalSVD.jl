@@ -1,6 +1,7 @@
 module IncrementalSVD
 
 using LinearAlgebra
+using FastLapackInterface: QRWs, SVDsvdWs
 
 export isvd
 @static if VERSION >= v"1.11"
@@ -43,7 +44,8 @@ function isvd(X::AbstractMatrix{<:Real}, nc)
     U, s
 end
 
-struct Cache{T}
+# `SW` is the (internally determined) type of the SVD workspace `svdws`.
+struct Cache{T,SW}
     A::Matrix{T}      # NaN-imputation may modify values, don't destroy the input
     UtA::Matrix{T}    # U'*A
     Uperp::Matrix{T}  # A - U*UtA, the part of A orthogonal to U; will also hold P once that gets computed
@@ -54,6 +56,8 @@ struct Cache{T}
     UP::Matrix{T}     # [U P]
     UProt::Matrix{T}  # UP*U′, the rotated part of [U P] (the first r columns will be the new U)
     Us::Matrix{T}     # U*Diagonal(s)
+    qrws::QRWs{T}     # LAPACK workspace for the QR factorization of Uperp (issue #29)
+    svdws::SW         # LAPACK workspace for the SVD of K (issue #29)
 end
 
 """
@@ -68,18 +72,28 @@ reduce memory allocation during [`IncrementalSVD.update!`](@ref).
 the rank of the SVD we're computing, and `b` is the blocksize. Concretely,
 `size(U) = (m, r)` and `size(A) = (m, b)`.
 """
-Cache{T}(m::Int, r::Int, b::Int) where T = Cache{T}(
-    zeros(T, m, b),     # A
-    zeros(T, r, b),     # UtA
-    zeros(T, m, b),     # Uperp
-    zeros(T, r, b),     # UtP
-    zeros(T, m, b),     # Pperp
-    zeros(T, b, b),     # R
-    zeros(T, r+b, r+b), # K
-    zeros(T, m, r+b),   # UP
-    zeros(T, m, r+b),   # UProt
-    zeros(T, m, r),     # Us
-)
+function Cache{T}(m::Int, r::Int, b::Int) where T
+    Uperp = zeros(T, m, b)
+    K = zeros(T, r+b, r+b)
+    # The LAPACK workspace is sized once here (a workspace query) so that
+    # `update!` can reuse it instead of reallocating on every call (issue #29).
+    qrws = QRWs(Uperp)
+    svdws = SVDsvdWs(K; jobu='O', jobvt='N')
+    return Cache{T,typeof(svdws)}(
+        zeros(T, m, b),     # A
+        zeros(T, r, b),     # UtA
+        Uperp,
+        zeros(T, r, b),     # UtP
+        zeros(T, m, b),     # Pperp
+        zeros(T, b, b),     # R
+        K,
+        zeros(T, m, r+b),   # UP
+        zeros(T, m, r+b),   # UProt
+        zeros(T, m, r),     # Us
+        qrws,
+        svdws,
+    )
+end
 function Cache(U::AbstractMatrix, A::AbstractMatrix)
     Base.require_one_based_indexing(U, A)
     size(U, 1) == size(A,  1) || throw(DimensionMismatch("number of rows in U and A must match, got $(size(U, 1)) and $(size(A, 1))"))
@@ -156,7 +170,7 @@ function update!(U::AbstractMatrix, s::AbstractVector, A::AbstractMatrix, cache:
     mul!(UtA, U', cache.A)          # projection onto space spanned by U
     mul!(Uperp, U, UtA)             # projection back into U-space
     negsub!(Uperp, cache.A)         # the part of A orthogonal to U
-    P, R = qrf!(Uperp, R)
+    P, R = qrf!(Uperp, R, cache)
     # Nominally, P is already orthogonal to U. But if the number of retained components exceeds
     # the actual rank of the matrix, this may not be true (it orthogonalizes noise).
     # So we'll project out the part of P that's in the span of U.
@@ -175,8 +189,8 @@ function update!(U::AbstractMatrix, s::AbstractVector, A::AbstractMatrix, cache:
     K[r+1:r+b, r+1:r+b] = R
     # Up, sp, _ = svd(K)
     # For this application, gesvd is faster, partly because we can
-    # skip computing V
-    U′, s′, _ = LAPACK.gesvd!('O', 'N', K)
+    # skip computing V. The cached workspace avoids per-call allocation (issue #29).
+    U′, s′, _ = LAPACK.gesvd!(cache.svdws, 'O', 'N', K; resize=false)
     mul!(UProt, UP, U′)
     copyto!(U, view(UProt, :, 1:r))
     copyto!(s, view(s′, 1:r))
@@ -202,10 +216,10 @@ function impute_nans!(A, Us)
     # Impute missing values
     for j in axes(A, 2)
         c = view(A, :, j)
-        nanflag = isnan.(c)
-        sum(nanflag) == 0 && continue
-        notnanflag = map(!, nanflag)
-        c[nanflag] = Us[nanflag,:] * (Us[notnanflag,:] \ c[notnanflag])
+        any(isnan, c) || continue   # scan without materializing a mask (issue #29)
+        nanrows = findall(isnan, c)
+        notnanrows = findall(!isnan, c)
+        c[nanrows] = Us[nanrows,:] * (Us[notnanrows,:] \ c[notnanrows])
     end
     return A
 end
@@ -218,16 +232,17 @@ function negsub!(dest, src)
     return dest
 end
 
-# For this application, geqrf is faster
-function qrf!(P, R)
+# For this application, geqrf is faster. The cached workspace in `cache.qrws`
+# avoids per-call LAPACK workspace allocation (issue #29).
+function qrf!(P, R, cache::Cache)
     m, b = size(P)
     m >= b || throw(DimensionMismatch("Works only for m > b"))
-    P, tau = LAPACK.geqrf!(P)
+    LAPACK.geqrf!(cache.qrws, P; resize=false)   # reflectors land in cache.qrws.τ
     fill!(R, zero(eltype(R)))
     for j = 1:b, i = 1:j
         R[i,j] = P[i,j]
     end
-    LAPACK.orgqr!(P, tau)
+    LAPACK.orgqr!(cache.qrws, P)                  # form Q in place
     return P, R
 end
 
