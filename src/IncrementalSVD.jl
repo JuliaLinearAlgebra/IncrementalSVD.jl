@@ -5,7 +5,7 @@ using FastLapackInterface: QRWs, SVDsvdWs
 
 export isvd
 @static if VERSION >= v"1.11"
-    eval(Meta.parse("public Cache, update!, impute_nans!"))
+    eval(Meta.parse("public Cache, update!, impute_nans!, UpdateTransport, update_transport!"))
 end
 
 """
@@ -198,6 +198,52 @@ function update!(U::AbstractMatrix, s::AbstractVector, A::AbstractMatrix, cache:
 end
 update!(U::AbstractMatrix, s::AbstractVector, A::AbstractMatrix) = update!(U, s, A, Cache(U, A))
 update!(U::AbstractMatrix, s::AbstractVector, A::AbstractMatrix, ::Nothing) = update!(U, s, A, Cache(U, A))
+
+"""
+    UpdateTransport
+
+Owned matrices `M` and `h` describing the latent-history update
+`Hnew = [M * Hold h]`. These describe the kernel's recursive surrogate, not
+the projection of the complete original data onto the newest spatial basis.
+The matrices do not alias the update cache.
+"""
+struct UpdateTransport{T}
+    M::Matrix{T}
+    h::Matrix{T}
+end
+
+"""
+    U, s, transport = update_transport!(U, s, A, cache=Cache(U, A))
+
+Run the same update as [`update!`](@ref), additionally returning owned latent
+history transports. Inputs must be finite, `s >= 0`, and have matching dimensions.
+The ordinary `update!` path and its NaN-imputation behavior are unchanged.
+
+If `Hold * Hold' == Diagonal(sold.^2)`, the returned transport satisfies
+`Hnew * Hnew' ≈ Diagonal(s.^2)` for `Hnew = [M*Hold h]`. No division by singular
+values or right singular-vector computation is used. In rank-deficient cases,
+the kernel's spatial reorthogonalization need not give an exact appended-data
+SVD; the transport tracks that kernel's latent surrogate, not an exact SVD claim.
+As with `update!`, a LAPACK failure can leave its arguments modified; stage copies
+when an application requires a transactional update.
+"""
+function update_transport!(U::AbstractMatrix, s::AbstractVector, A::AbstractMatrix,
+        cache::Cache=Cache(U, A))
+    Base.require_one_based_indexing(U, s, A)
+    m,r=size(U); ma,b=size(A)
+    ma==m && length(s)==r || throw(DimensionMismatch("incompatible U, s, A"))
+    size(cache.A)==(m,b) && size(cache.K)==(r+b,r+b) &&
+        size(cache.UtA)==(r,b) || throw(DimensionMismatch("incompatible cache"))
+    all(isfinite,U) && all(isfinite,s) && all(isfinite,A) ||
+        throw(ArgumentError("transport inputs must be finite"))
+    all(>=(0),s) || throw(ArgumentError("singular values must be nonnegative"))
+    update!(U,s,A,cache)
+    # gesvd! overwrites K with its left singular vectors. Use only retained
+    # columns and copy before this cache can be reused by another update.
+    M=Matrix(transpose(view(cache.K,1:r,1:r)))
+    h=M*cache.UtA + transpose(view(cache.K,r+1:r+b,1:r))*cache.R
+    return U,s,UpdateTransport(M,Matrix(h))
+end
 
 function update!(::Nothing, s::Nothing, A::AbstractMatrix, cache::Cache=Cache(A, A))
     copyto!(cache.A, A)

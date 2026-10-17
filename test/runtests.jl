@@ -1,6 +1,8 @@
 using Test, LinearAlgebra
 using IncrementalSVD: IncrementalSVD as ISVD, isvd
 
+include("transport.jl")
+
 # Test the function in the README
 function isvd_with_Vt(X::AbstractMatrix{<:Real}, nc)
     Base.require_one_based_indexing(X)
