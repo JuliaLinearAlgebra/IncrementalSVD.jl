@@ -231,6 +231,11 @@ column count `n + b` is returned. Initialize with
 `cache` is the same [`IncrementalSVD.Cache`](@ref) as for `update!` with blocks of
 `b` columns.
 
+`A` must have no more columns than rows (`b <= m`): the update factors its new columns
+with a thin QR, as `update!` does. Pass a wider chunk as consecutive blocks of at most
+`m` columns (with truncation the result can then differ slightly from a single update
+of the whole chunk).
+
 `A` must be finite. Unlike `update!`, no NaN-imputation is performed: the mean
 of data with missing entries is undefined, and imputation from `U, s` alone does
 not model the mean.
