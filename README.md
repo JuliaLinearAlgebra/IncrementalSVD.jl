@@ -92,6 +92,35 @@ The singular values computed by `update!` were accurate to 3-5 digits.
 
 `isvd` is just a thin wrapper over this basic iterative update.
 
+## Centered updates (incremental PCA)
+
+`update!` decomposes the data as given. For principal component analysis you want the SVD of the data minus its mean, and in a streaming setting that mean changes with every chunk.
+`IncrementalSVD.centered_update!` keeps the decomposition centered at the mean of all columns seen so far, without revisiting old data. You hold the running mean and column count:
+
+```julia
+julia> using LinearAlgebra
+
+julia> using IncrementalSVD: IncrementalSVD as ISVD
+
+julia> X = 10 .+ randn(5, 12);
+
+julia> U, s, mu, n = zeros(5, 5), zeros(5), zeros(5), 0;   # rank 5, mean, number of columns
+
+julia> for j = 1:4:12
+           U, s, n = ISVD.centered_update!(U, s, mu, n, X[:, j:j+3])
+       end
+
+julia> mu ≈ vec(sum(X; dims=2)) / 12
+true
+
+julia> s ≈ svdvals(X .- mu)
+true
+```
+
+Here no components are truncated, so the result matches the SVD of the centered matrix. With fewer components it is approximate in the same way as `update!`.
+To report the fraction of variance explained by the retained components, accumulate the total centered sum of squares with `IncrementalSVD.centered_scatter(A, mu, n)` before each update; `sum(abs2, s)` alone cannot provide it once components have been discarded.
+The method is that of Ross et al. (2008), see `?IncrementalSVD.centered_update!`.
+
 ## Reducing error
 
 The most straightforward way to reduce error is to retain more components than you actually need.
@@ -153,6 +182,12 @@ The main reference is
 > Brand, M. "Fast low-rank modifications of the thin singular value
 > decomposition."  Linear algebra and its applications 415.1 (2006):
 > 20-30.
+
+Centered updates are described in section 3.1 of
+
+> Ross, D. A., Lim, J., Lin, R.-S., and Yang, M.-H. "Incremental learning for
+> robust visual tracking." International Journal of Computer Vision 77 (2008):
+> 125-141.
 
 NaN-imputation is described in
 

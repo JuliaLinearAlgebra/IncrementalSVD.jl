@@ -5,7 +5,7 @@ using FastLapackInterface: QRWs, SVDsvdWs
 
 export isvd
 @static if VERSION >= v"1.11"
-    eval(Meta.parse("public Cache, update!, impute_nans!"))
+    eval(Meta.parse("public Cache, update!, centered_update!, centered_scatter, impute_nans!"))
 end
 
 """
@@ -14,6 +14,8 @@ IncrementalSVD implements incremental singular value decomposition.
 The public functions are:
 - [`isvd`](@ref)
 - [`IncrementalSVD.update!`](@ref)        (not exported)
+- [`IncrementalSVD.centered_update!`](@ref) (not exported)
+- [`IncrementalSVD.centered_scatter`](@ref) (not exported)
 - [`IncrementalSVD.impute_nans!`](@ref)   (not exported)
 - [`IncrementalSVD.Cache`](@ref)          (not exported)
 """ IncrementalSVD
@@ -164,6 +166,12 @@ function update!(U::AbstractMatrix, s::AbstractVector, A::AbstractMatrix, cache:
     mA, b = size(A)
     m == mA || throw(DimensionMismatch("number of rows in U and A must match, got $m and $mA"))
     copyto!(cache.A, A)
+    return update_cached!(U, s, cache, b)
+end
+
+# The body of `update!`, applied to the `b` columns of data already copied into `cache.A`.
+function update_cached!(U::AbstractMatrix, s::AbstractVector, cache::Cache, b::Int)
+    r = size(U, 2)
     mul!(cache.Us, U, Diagonal(s))  # U*S is needed for NaN-imputation
     impute_nans!(cache.A, cache.Us)
     (; UtA, Uperp, UtP, Pperp, R, K, UP, UProt) = cache
@@ -204,6 +212,142 @@ function update!(::Nothing, s::Nothing, A::AbstractMatrix, cache::Cache=Cache(A,
     cache.A[isnan.(A)] .= 0
     U, s, _ = svd(cache.A)
     return U, s
+end
+
+"""
+    U, s, n = IncrementalSVD.centered_update!(U, s, mean, n, A, cache=Cache(U, A))
+
+Update a thin SVD of *mean-centered* data with a new matrix `A` (`m x b`) of data
+columns. `U, s` are the left singular vectors and singular values of the matrix of
+all `n` columns seen so far, each minus their common mean `mean`. On return they
+describe all `n + b` columns minus the updated mean. This is the update needed for
+an incremental PCA, where the mean moves with every chunk.
+
+The caller holds the mean: `mean` (length `m`) is updated in place, and the new
+column count `n + b` is returned. Initialize with
+
+    U, s, mean, n = zeros(T, m, r), zeros(T, r), zeros(T, m), 0
+
+`cache` is the same [`IncrementalSVD.Cache`](@ref) as for `update!` with blocks of
+`b` columns.
+
+`A` must be finite. Unlike `update!`, no NaN-imputation is performed: the mean
+of data with missing entries is undefined, and imputation from `U, s` alone does
+not model the mean.
+
+Validation errors leave all arguments unchanged. `mean` is updated before the SVD
+update runs, so if LAPACK fails, `mean` already describes all `n + b` columns
+while `U` and `s` do not; stage copies when an update must be transactional.
+
+# Extended help
+
+Let `mu_old` be the mean of the `n` previous columns and `mu_A` the mean of the `b`
+columns of `A`. The scatter matrix of all `n + b` columns about their joint mean is
+the scatter of the previous columns about `mu_old`, plus that of `A` about `mu_A`,
+plus `n*b/(n+b) * (mu_old - mu_A)*(mu_old - mu_A)'` (Ross et al. 2008, section 3.1).
+Hence the centered SVD is updated by one block update with the columns
+
+    [A .- mu_A  sqrt(n*b/(n+b)) .* (mu_old - mu_A)]
+
+followed by `mean = (n*mu_old + b*mu_A) / (n+b)`. Old columns are never re-centered.
+
+The `b` columns of `A .- mu_A` sum to zero, so they span at most `b-1` dimensions.
+The update uses instead the `b-1` columns of `(A .- mu_A)*Q`, for the Householder
+reflection `Q` that maps `ones(b)/sqrt(b)` to the last unit vector; they have the same
+scatter `(A .- mu_A)*(A .- mu_A)'`, and each costs one `axpy`:
+
+    (A[:, j] - mu_A) + (A[:, b] - mu_A) / (sqrt(b) - 1),   j = 1, ..., b-1
+
+With the correction column this is a block of `b` columns, so the usual `Cache`
+applies. It also removes the linear dependence among the centered columns (for
+example, a single-column chunk would otherwise give a zero column).
+
+If `r` is at least the rank of the centered data, the result matches the SVD of the
+centered data (up to signs and roundoff) with the same accuracy as `update!` on
+uncentered data; otherwise it carries the truncation error of `update!`. Unlike
+Ross et al., no forgetting factor is applied. Reference:
+
+> Ross, D. A., Lim, J., Lin, R.-S., and Yang, M.-H. "Incremental learning for
+> robust visual tracking." International Journal of Computer Vision 77 (2008):
+> 125-141.
+
+Because truncation discards variance, `sum(abs2, s)` underestimates the total
+centered variance; see [`IncrementalSVD.centered_scatter`](@ref) for the exact total.
+"""
+function centered_update!(U::AbstractMatrix, s::AbstractVector, mean::AbstractVector, n::Integer,
+                          A::AbstractMatrix, cache::Cache)
+    Base.require_one_based_indexing(U, s, mean, A)
+    m, r = size(U)
+    mA, b = size(A)
+    m == mA == length(mean) || throw(DimensionMismatch("number of rows in U, mean and A must match, got $m, $(length(mean)) and $mA"))
+    length(s) == r || throw(DimensionMismatch("length of s must match the number of columns of U, got $(length(s)) and $r"))
+    b >= 1 || throw(ArgumentError("A must have at least one column"))
+    n >= 0 || throw(ArgumentError("n must be nonnegative, got $n"))
+    m >= b || throw(DimensionMismatch("A must have no more columns than rows, got $b columns and $m rows"))
+    size(cache.A) == (m, b) || throw(DimensionMismatch("cache is sized for $(size(cache.A)) blocks, got $((m, b))"))
+    all(isfinite, A) || throw(ArgumentError("A must be finite: the mean of data with missing entries is undefined"))
+    T = eltype(cache.A)
+    B = cache.A                     # the block passed to the update (Extended help)
+    c = view(B, :, b)
+    sum!(c, A)
+    c ./= b                         # c = mu_A
+    if b > 1
+        f = inv(sqrt(T(b)) - one(T))
+        for j = 1:b-1, i = 1:m
+            B[i, j] = (A[i, j] - c[i]) + (A[i, b] - c[i]) * f
+        end
+    end
+    if n == 0
+        copyto!(mean, c)
+        fill!(c, zero(T))           # sqrt(n*b/(n+b)) == 0
+    else
+        c .= mean .- c              # c = mu_old - mu_A
+        mean .-= (T(b) / T(n + b)) .* c
+        c .*= sqrt(T(n) * T(b) / T(n + b))
+    end
+    update_cached!(U, s, cache, b)
+    return U, s, n + b
+end
+centered_update!(U::AbstractMatrix, s::AbstractVector, mean::AbstractVector, n::Integer, A::AbstractMatrix) =
+    centered_update!(U, s, mean, n, A, Cache(U, A))
+centered_update!(U::AbstractMatrix, s::AbstractVector, mean::AbstractVector, n::Integer, A::AbstractMatrix, ::Nothing) =
+    centered_update!(U, s, mean, n, A, Cache(U, A))
+
+"""
+    ss = IncrementalSVD.centered_scatter(A, mean, n)
+
+The increase in the total centered sum of squares (the trace of the scatter matrix)
+when the columns of `A` join `n` columns with mean `mean`:
+
+    sum(abs2, A .- mu_A) + n*b/(n+b) * sum(abs2, mean .- mu_A)
+
+where `mu_A` is the mean of the `b` columns of `A`. Summed over chunks, it is the
+total centered sum of squares of all the data, which a truncated
+[`IncrementalSVD.centered_update!`](@ref) cannot recover from `s`. The fraction of
+variance explained by the retained components is `sum(abs2, s) / total`. Call it
+before `centered_update!` updates `mean`.
+"""
+function centered_scatter(A::AbstractMatrix, mean::AbstractVector, n::Integer)
+    Base.require_one_based_indexing(A, mean)
+    m, b = size(A)
+    m == length(mean) || throw(DimensionMismatch("number of rows in A and mean must match, got $m and $(length(mean))"))
+    b >= 1 || throw(ArgumentError("A must have at least one column"))
+    n >= 0 || throw(ArgumentError("n must be nonnegative, got $n"))
+    T = float(typeof(oneunit(eltype(A)) * oneunit(eltype(mean))))
+    within = zero(T)
+    between = zero(T)
+    for i in 1:m
+        muAi = zero(T)
+        for j in 1:b
+            muAi += A[i, j]
+        end
+        muAi /= b
+        for j in 1:b
+            within += abs2(A[i, j] - muAi)
+        end
+        between += abs2(mean[i] - muAi)
+    end
+    return within + (T(n) * T(b) / T(n + b)) * between
 end
 
 """
